@@ -37,11 +37,12 @@ func eval(args []string) {
 	limit := fs.Int64("limit", 50, "requests allowed per window")
 	window := fs.Duration("window", time.Minute, "rule window")
 	seed := fs.Uint64("seed", 1, "random seed")
+	near := fs.Float64("near", 0.15, "share of clients sending 0.7 to 1.3 times the limit")
 	byShape := fs.Bool("by-shape", false, "also report steady, bursty and ramping clients separately")
 	fs.Parse(args)
 
 	rule := slidewin.Rule{Limit: *limit, Window: *window}
-	src := slidewin.Mix(*clients, *limit, *seed)
+	src := slidewin.Mix(*clients, *limit, *near, *seed)
 	length := time.Duration(*minutes) * time.Minute
 	if *byShape {
 		defer func() {
@@ -84,10 +85,11 @@ func sim(args []string) {
 	window := fs.Duration("window", time.Minute, "rule window")
 	servers := fs.Int("servers", 16, "edge servers in the PoP")
 	seed := fs.Uint64("seed", 1, "random seed")
+	near := fs.Float64("near", 0.15, "share of clients sending 0.7 to 1.3 times the limit")
 	fs.Parse(args)
 
 	rule := slidewin.Rule{Limit: *limit, Window: *window}
-	src := slidewin.Mix(*clients, *limit, *seed)
+	src := slidewin.Mix(*clients, *limit, *near, *seed)
 	feed := func(fn func(slidewin.Request)) {
 		slidewin.Stream(src, time.Unix(0, 0), time.Duration(*minutes)*time.Minute, *window, *servers, *seed, fn)
 	}

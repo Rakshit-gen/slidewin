@@ -103,15 +103,16 @@ func poisson(rng *rand.Rand, mean float64) int {
 	}
 }
 
-// Mix is a population of clients around a limit: most far below it, some
-// close on either side, a few far over.
-func Mix(n int, limit int64, seed uint64) []Source {
+// Mix is a population of clients around a limit. A share near of them sends
+// between 0.7 and 1.3 times the limit, where the estimate and the exact count
+// disagree most; 5% send 2 to 10 times the limit; the rest stay under half.
+func Mix(n int, limit int64, near float64, seed uint64) []Source {
 	rng := rand.New(rand.NewPCG(seed, 1))
 	out := make([]Source, n)
 	for i := range out {
 		var per float64
 		switch u := rng.Float64(); {
-		case u < 0.80:
+		case u < 0.95-near:
 			per = rng.Float64() * 0.5
 		case u < 0.95:
 			per = 0.7 + rng.Float64()*0.6

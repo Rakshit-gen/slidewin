@@ -19,7 +19,7 @@ func TestGenerateHitsAverageRate(t *testing.T) {
 }
 
 func TestGenerateIsRepeatable(t *testing.T) {
-	src := Mix(20, 50, 7)
+	src := Mix(20, 50, 0.15, 7)
 	a := Generate(src, time.Unix(0, 0), 5*time.Minute, time.Minute, 4, 3)
 	b := Generate(src, time.Unix(0, 0), 5*time.Minute, time.Minute, 4, 3)
 	if len(a) != len(b) || len(a) == 0 || a[len(a)-1] != b[len(b)-1] {
