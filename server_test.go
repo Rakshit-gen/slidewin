@@ -113,3 +113,19 @@ func TestServerIsSafeForConcurrentUse(t *testing.T) {
 		}
 	}
 }
+
+func TestServerQueueIsBounded(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)}
+	s := NewServer(NewLimiter(Rule{Limit: 1000, Window: time.Minute}, NewCluster(c.now, "a"), c.now))
+	s.MaxPending = 10
+	for i := 0; i < 25; i++ {
+		s.Allow("x")
+	}
+	if s.Dropped != 15 {
+		t.Fatalf("dropped %d", s.Dropped)
+	}
+	s.Flush()
+	if got := s.lim.Rate("x"); got != 10 {
+		t.Fatalf("counted %v", got)
+	}
+}

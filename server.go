@@ -14,10 +14,25 @@ type Server struct {
 	// NoCache turns off the in-memory copy of mitigations, so every request
 	// asks the store. Only useful to measure what the cache saves.
 	NoCache bool
+	// MaxPending caps the counting queue (DefaultMaxPending if 0). Requests
+	// past the cap are served but not counted, so a flood can't grow memory
+	// faster than counting drains it.
+	MaxPending int
+	Dropped    int64 // requests left uncounted because the queue was full
 
 	mu      sync.Mutex
 	pending []string
 	blocked map[string]time.Time // mitigations this server already knows about
+}
+
+// DefaultMaxPending is the counting queue cap when Server.MaxPending is 0.
+const DefaultMaxPending = 1 << 16
+
+func (s *Server) maxPending() int {
+	if s.MaxPending > 0 {
+		return s.MaxPending
+	}
+	return DefaultMaxPending
 }
 
 // NewServer returns a server that uses lim for counting.
@@ -55,7 +70,11 @@ func (s *Server) Check(client string) (wait time.Duration, blocked bool) {
 		return end.Sub(now), true
 	}
 	s.mu.Lock()
-	s.pending = append(s.pending, client)
+	if len(s.pending) < s.maxPending() {
+		s.pending = append(s.pending, client)
+	} else {
+		s.Dropped++
+	}
 	s.mu.Unlock()
 	return 0, false
 }
