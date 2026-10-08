@@ -25,7 +25,7 @@ func TestClusterKeepsTaggedKeysTogether(t *testing.T) {
 		a, b := fmt.Sprintf("rl:{%s}:1", ip), fmt.Sprintf("rl:{%s}:2", ip)
 		c.Set(a, 1, 0)
 		c.Set(b, 2, 0)
-		if got := c.GetMulti(a, b); len(got) != 2 {
+		if got, _ := c.GetMulti(a, b); len(got) != 2 {
 			t.Fatalf("%s: counters split across shards: %v", ip, got)
 		}
 	}

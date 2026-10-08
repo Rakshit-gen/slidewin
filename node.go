@@ -6,8 +6,12 @@ import (
 	"time"
 )
 
-// ErrMiss is returned when a key is absent or has expired, as memcached does.
-var ErrMiss = errors.New("slidewin: key not found")
+var (
+	// ErrMiss is returned when a key is absent or has expired, as memcached does.
+	ErrMiss = errors.New("slidewin: key not found")
+	// ErrDown is returned by a shard that cannot be reached.
+	ErrDown = errors.New("slidewin: shard down")
+)
 
 // Node is one memcached shard. Like the real thing it only offers GET, SET and
 // INCR. INCR is atomic but fails on a missing key, so there is no single call
@@ -16,6 +20,18 @@ type Node struct {
 	mu    sync.Mutex
 	items map[string]item
 	now   func() time.Time
+	down  bool
+}
+
+// SetDown makes the shard unreachable, or reachable again. A shard that comes
+// back has lost everything, as a restarted memcached would.
+func (n *Node) SetDown(down bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.down && !down {
+		n.items = map[string]item{}
+	}
+	n.down = down
 }
 
 type item struct {
@@ -44,6 +60,9 @@ func (n *Node) live(key string) (item, bool) {
 func (n *Node) Get(key string) (int64, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.down {
+		return 0, ErrDown
+	}
 	it, ok := n.live(key)
 	if !ok {
 		return 0, ErrMiss
@@ -52,14 +71,18 @@ func (n *Node) Get(key string) (int64, error) {
 }
 
 // Set stores val under key for ttl (forever if ttl is 0).
-func (n *Node) Set(key string, val int64, ttl time.Duration) {
+func (n *Node) Set(key string, val int64, ttl time.Duration) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.down {
+		return ErrDown
+	}
 	it := item{val: val}
 	if ttl > 0 {
 		it.expires = n.now().Add(ttl)
 	}
 	n.items[key] = it
+	return nil
 }
 
 // Incr adds delta to an existing counter and returns the new value. The expiry
@@ -67,6 +90,9 @@ func (n *Node) Set(key string, val int64, ttl time.Duration) {
 func (n *Node) Incr(key string, delta int64) (int64, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.down {
+		return 0, ErrDown
+	}
 	it, ok := n.live(key)
 	if !ok {
 		return 0, ErrMiss
@@ -78,14 +104,17 @@ func (n *Node) Incr(key string, delta int64) (int64, error) {
 
 // GetMulti fetches several keys in one round trip, the way a memcached GET
 // with more than one key does. Missing keys are left out of the result.
-func (n *Node) GetMulti(keys ...string) map[string]int64 {
+func (n *Node) GetMulti(keys ...string) (map[string]int64, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.down {
+		return nil, ErrDown
+	}
 	out := make(map[string]int64, len(keys))
 	for _, k := range keys {
 		if it, ok := n.live(k); ok {
 			out[k] = it.val
 		}
 	}
-	return out
+	return out, nil
 }

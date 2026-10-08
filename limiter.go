@@ -55,11 +55,13 @@ func (l *Limiter) Count(client string) {
 	}
 }
 
-// Rate is the sliding window estimate of client's requests over the last window.
+// Rate is the sliding window estimate of client's requests over the last
+// window. If the shard is down it is 0: the limiter fails open, so losing a
+// shard means less protection, never blocked customers.
 func (l *Limiter) Rate(client string) float64 {
 	i, elapsed := Bucket(l.now(), l.rule.Window)
 	prev, cur := l.counterKey(client, i-1), l.counterKey(client, i)
-	got := l.store.GetMulti(prev, cur)
+	got, _ := l.store.GetMulti(prev, cur)
 	return Estimate(got[prev], got[cur], elapsed, l.rule.Window)
 }
 

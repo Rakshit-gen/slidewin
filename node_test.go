@@ -36,7 +36,7 @@ func TestNodeGetMulti(t *testing.T) {
 	n := NewNode(nil)
 	n.Set("a", 1, 0)
 	n.Set("b", 2, 0)
-	got := n.GetMulti("a", "b", "c")
+	got, _ := n.GetMulti("a", "b", "c")
 	if len(got) != 2 || got["a"] != 1 || got["b"] != 2 {
 		t.Fatalf("got %v", got)
 	}

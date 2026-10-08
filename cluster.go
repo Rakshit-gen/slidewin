@@ -44,17 +44,22 @@ func (c *Cluster) node(key string) *Node {
 // Get, Set and Incr go to the shard that owns key.
 func (c *Cluster) Get(key string) (int64, error) { return c.node(key).Get(key) }
 
-func (c *Cluster) Set(key string, val int64, ttl time.Duration) { c.node(key).Set(key, val, ttl) }
+func (c *Cluster) Set(key string, val int64, ttl time.Duration) error {
+	return c.node(key).Set(key, val, ttl)
+}
 
 func (c *Cluster) Incr(key string, delta int64) (int64, error) { return c.node(key).Incr(key, delta) }
 
 // GetMulti fetches keys that share a hash tag in one round trip.
-func (c *Cluster) GetMulti(keys ...string) map[string]int64 {
+func (c *Cluster) GetMulti(keys ...string) (map[string]int64, error) {
 	if len(keys) == 0 {
-		return nil
+		return nil, nil
 	}
 	return c.node(keys[0]).GetMulti(keys...)
 }
 
 // RoundTrips is how many requests have been sent to the shards so far.
 func (c *Cluster) RoundTrips() int64 { return c.trips.Load() }
+
+// Node returns the shard on the named server.
+func (c *Cluster) Node(server string) *Node { return c.nodes[server] }

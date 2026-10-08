@@ -79,3 +79,27 @@ func TestRulesWithNamesStayApart(t *testing.T) {
 		t.Fatal("api rule sees login mitigation")
 	}
 }
+
+func TestLimiterFailsOpenWhenShardIsDown(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)}
+	store := NewCluster(c.now, "a")
+	s := NewServer(NewLimiter(Rule{Limit: 1, Window: time.Minute}, store, c.now))
+	s.Allow("x")
+	s.Allow("x")
+	s.Flush()
+	if s.Allow("x") {
+		t.Fatal("not mitigated")
+	}
+	store.Node("a").SetDown(true)
+	c.advance(time.Minute) // the cached mitigation runs out
+	for i := 0; i < 10; i++ {
+		if !s.Allow("x") {
+			t.Fatal("blocked while the store is down")
+		}
+	}
+	s.Flush() // counting fails quietly
+	store.Node("a").SetDown(false)
+	if got := s.lim.Rate("x"); got != 0 {
+		t.Fatalf("restarted shard kept counts: %v", got)
+	}
+}
