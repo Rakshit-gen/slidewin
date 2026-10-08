@@ -60,3 +60,17 @@ func (r *Ring) Lookup(key string) string {
 	}
 	return r.owner[r.points[i]]
 }
+
+// Add puts another server on the ring.
+func (r *Ring) Add(server string) { r.add(server) }
+
+// Remove takes a server off the ring. Its keys fall to the next point along.
+func (r *Ring) Remove(server string) {
+	r.points = slices.DeleteFunc(r.points, func(p uint32) bool {
+		if r.owner[p] == server {
+			delete(r.owner, p)
+			return true
+		}
+		return false
+	})
+}
