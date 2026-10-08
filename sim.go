@@ -16,12 +16,13 @@ type SimConfig struct {
 type SimReport struct {
 	Requests int
 	Blocked  int
-	// Leaked counts requests served while the client's exact rate, counting
-	// every request it sent, was over the limit.
+	// Leaked counts requests served that took the client over the limit:
+	// with them, the client had more than Limit requests served in the last
+	// window.
 	Leaked int
-	// Collateral counts requests blocked while the client's exact rate was at
-	// or under the limit. Most come from the mitigation timeout outlasting the
-	// burst that caused it.
+	// Collateral counts requests blocked while the client was sending at or
+	// under the limit, counting everything it sent in the last window. Most
+	// come from the mitigation timeout outlasting the burst that caused it.
 	Collateral int
 	RoundTrips int64
 }
@@ -33,7 +34,8 @@ func Simulate(cfg SimConfig, feed func(func(Request))) SimReport {
 	for _, s := range pop.Servers {
 		s.NoCache = cfg.NoCache
 	}
-	log := NewLog(cfg.Rule.Window)
+	sent := NewLog(cfg.Rule.Window)   // every request
+	served := NewLog(cfg.Rule.Window) // requests the PoP let through
 	var r SimReport
 	var flushed time.Time
 	feed(func(q Request) {
@@ -42,17 +44,18 @@ func Simulate(cfg SimConfig, feed func(func(Request))) SimReport {
 			pop.Flush()
 			flushed = q.At
 		}
-		served := pop.Allow(q.Conn, q.Client)
-		log.Add(q.Client, q.At)
-		over := log.Rate(q.Client, q.At) > int(cfg.Rule.Limit)
+		limit := int(cfg.Rule.Limit)
+		sent.Add(q.Client, q.At)
 		r.Requests++
-		switch {
-		case !served:
+		if !pop.Allow(q.Conn, q.Client) {
 			r.Blocked++
-			if !over {
+			if sent.Rate(q.Client, q.At) <= limit {
 				r.Collateral++
 			}
-		case over:
+			return
+		}
+		served.Add(q.Client, q.At)
+		if served.Rate(q.Client, q.At) > limit {
 			r.Leaked++
 		}
 	})
