@@ -24,16 +24,24 @@ type Server struct {
 func NewServer(lim *Limiter) *Server { return &Server{lim: lim, blocked: map[string]time.Time{}} }
 
 // Allow decides whether to serve a request from client.
+func (s *Server) Allow(client string) bool {
+	_, blocked := s.Check(client)
+	return !blocked
+}
+
+// Check is Allow that also says, for a blocked client, how long until its
+// mitigation ends.
+//
 // A mitigation's end time is known when it starts, so once this server has
 // seen one it keeps it in memory and stops asking the store about that client
 // until it ends. During an attack the attacker's requests cost no round trips.
-func (s *Server) Allow(client string) bool {
+func (s *Server) Check(client string) (wait time.Duration, blocked bool) {
 	now := s.lim.now()
 	s.mu.Lock()
 	end, cached := s.blocked[client]
 	if cached && now.Before(end) {
 		s.mu.Unlock()
-		return false
+		return end.Sub(now), true
 	}
 	delete(s.blocked, client)
 	s.mu.Unlock()
@@ -44,12 +52,12 @@ func (s *Server) Allow(client string) bool {
 			s.blocked[client] = end
 			s.mu.Unlock()
 		}
-		return false
+		return end.Sub(now), true
 	}
 	s.mu.Lock()
 	s.pending = append(s.pending, client)
 	s.mu.Unlock()
-	return true
+	return 0, false
 }
 
 // Flush counts every queued request and judges each client it touched. A real

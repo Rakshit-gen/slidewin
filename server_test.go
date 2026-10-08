@@ -67,3 +67,20 @@ func TestServerRunFlushesInBackground(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestCheckSaysWhenMitigationEnds(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)}
+	l := NewLimiter(Rule{Limit: 1, Window: time.Minute, Timeout: 5 * time.Minute}, NewCluster(c.now, "a"), c.now)
+	s := NewServer(l)
+	s.Allow("x")
+	s.Allow("x")
+	s.Flush()
+	c.advance(time.Minute)
+	if wait, blocked := s.Check("x"); !blocked || wait != 4*time.Minute {
+		t.Fatalf("got %v %v", wait, blocked)
+	}
+	c.advance(time.Minute) // now from the in-memory copy
+	if wait, blocked := s.Check("x"); !blocked || wait != 3*time.Minute {
+		t.Fatalf("cached: got %v %v", wait, blocked)
+	}
+}
