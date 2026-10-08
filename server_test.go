@@ -22,3 +22,27 @@ func TestServerBlocksAfterFlush(t *testing.T) {
 		t.Fatal("other client blocked")
 	}
 }
+
+func TestServerCachesMitigation(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)}
+	store := NewCluster(c.now, "a")
+	l := NewLimiter(Rule{Limit: 1, Window: time.Minute}, store, c.now)
+	s := NewServer(l)
+	s.Allow("x")
+	s.Allow("x")
+	s.Flush()
+	s.Allow("x") // reads the flag once
+	before := store.RoundTrips()
+	for i := 0; i < 1000; i++ {
+		if s.Allow("x") {
+			t.Fatal("allowed during mitigation")
+		}
+	}
+	if n := store.RoundTrips() - before; n != 0 {
+		t.Fatalf("%d store round trips while mitigation was cached", n)
+	}
+	c.advance(time.Minute)
+	if !s.Allow("x") {
+		t.Fatal("still blocked after the mitigation ended")
+	}
+}

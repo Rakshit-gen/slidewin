@@ -1,6 +1,9 @@
 package slidewin
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // Server is one edge server in a PoP. On the request path it only checks the
 // mitigation flag. Counting and judging are queued and done later, so a busy
@@ -10,14 +13,31 @@ type Server struct {
 
 	mu      sync.Mutex
 	pending []string
+	blocked map[string]time.Time // mitigations this server already knows about
 }
 
 // NewServer returns a server that uses lim for counting.
-func NewServer(lim *Limiter) *Server { return &Server{lim: lim} }
+func NewServer(lim *Limiter) *Server { return &Server{lim: lim, blocked: map[string]time.Time{}} }
 
 // Allow decides whether to serve a request from client.
+// A mitigation's end time is known when it starts, so once this server has
+// seen one it keeps it in memory and stops asking the store about that client
+// until it ends. During an attack the attacker's requests cost no round trips.
 func (s *Server) Allow(client string) bool {
-	if _, blocked := s.lim.Mitigated(client); blocked {
+	now := s.lim.now()
+	s.mu.Lock()
+	end, cached := s.blocked[client]
+	if cached && now.Before(end) {
+		s.mu.Unlock()
+		return false
+	}
+	delete(s.blocked, client)
+	s.mu.Unlock()
+
+	if end, blocked := s.lim.Mitigated(client); blocked {
+		s.mu.Lock()
+		s.blocked[client] = end
+		s.mu.Unlock()
 		return false
 	}
 	s.mu.Lock()
