@@ -55,23 +55,39 @@ func (s Source) rateAt(f float64, rng *rand.Rand, on *bool) float64 {
 	return s.PerWindow
 }
 
-// Generate produces every request the sources send over length, in time order.
-// Arrivals are Poisson; servers is how many edge servers connections spread over.
-func Generate(sources []Source, start time.Time, length, window time.Duration, servers int, seed uint64) []Request {
+// Stream calls fn with every request the sources send over length, in time
+// order. It works one small step at a time, so memory does not grow with the
+// length of the run. Arrivals are Poisson; servers is how many edge servers
+// connections spread over.
+func Stream(sources []Source, start time.Time, length, window time.Duration, servers int, seed uint64, fn func(Request)) {
 	rng := rand.New(rand.NewPCG(seed, 0))
 	step := window / 100
-	var out []Request
-	for _, s := range sources {
-		on := rng.IntN(2) == 0
-		for t := time.Duration(0); t < length; t += step {
-			r := s.rateAt(float64(t)/float64(length), rng, &on) / 100
+	on := make([]bool, len(sources))
+	for i := range on {
+		on[i] = rng.IntN(2) == 0
+	}
+	var batch []Request
+	for t := time.Duration(0); t < length; t += step {
+		batch = batch[:0]
+		f := float64(t) / float64(length)
+		for i, s := range sources {
+			r := s.rateAt(f, rng, &on[i]) / 100
 			for range poisson(rng, r) {
 				at := t + time.Duration(rng.Float64()*float64(step))
-				out = append(out, Request{At: start.Add(at), Client: s.Client, Conn: rng.IntN(servers)})
+				batch = append(batch, Request{At: start.Add(at), Client: s.Client, Conn: rng.IntN(servers)})
 			}
 		}
+		slices.SortFunc(batch, func(a, b Request) int { return a.At.Compare(b.At) })
+		for _, q := range batch {
+			fn(q)
+		}
 	}
-	slices.SortStableFunc(out, func(a, b Request) int { return a.At.Compare(b.At) })
+}
+
+// Generate collects Stream's requests into a slice.
+func Generate(sources []Source, start time.Time, length, window time.Duration, servers int, seed uint64) []Request {
+	var out []Request
+	Stream(sources, start, length, window, servers, seed, func(q Request) { out = append(out, q) })
 	return out
 }
 

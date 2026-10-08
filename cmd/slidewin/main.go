@@ -40,8 +40,9 @@ func eval(args []string) {
 	rule := slidewin.Rule{Limit: *limit, Window: *window}
 	src := slidewin.Mix(*clients, *limit, *seed)
 	start := time.Now()
-	reqs := slidewin.Generate(src, time.Unix(0, 0), time.Duration(*minutes)*time.Minute, *window, 1, *seed)
-	r := slidewin.Evaluate(reqs, rule)
+	e := slidewin.NewEvaluator(rule)
+	slidewin.Stream(src, time.Unix(0, 0), time.Duration(*minutes)*time.Minute, *window, 1, *seed, e.Add)
+	r := e.Report()
 	fmt.Printf("%d requests from %d sources, limit %d per %v (%.1fs)\n",
 		r.Requests, r.Sources, rule.Limit, rule.Window, time.Since(start).Seconds())
 	fmt.Printf("judged differently from the exact log: %.3f%% (%d wrongly allowed, %d wrongly limited)\n",
