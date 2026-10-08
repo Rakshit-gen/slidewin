@@ -18,13 +18,15 @@ func main() {
 	switch os.Args[1] {
 	case "eval":
 		eval(os.Args[2:])
+	case "sim":
+		sim(os.Args[2:])
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: slidewin eval [flags]")
+	fmt.Fprintln(os.Stderr, "usage: slidewin eval|sim [flags]")
 	os.Exit(2)
 }
 
@@ -53,4 +55,42 @@ func eval(args []string) {
 		fmt.Printf(" (worst peaked at %.2fx the limit)", r.WorstMissed)
 	}
 	fmt.Printf("\nsources caught without ever going over: %d\n", r.Accused)
+}
+
+func sim(args []string) {
+	fs := flag.NewFlagSet("sim", flag.ExitOnError)
+	clients := fs.Int("clients", 2000, "number of synthetic clients")
+	minutes := fs.Int("minutes", 30, "length of the run in minutes")
+	limit := fs.Int64("limit", 50, "requests allowed per window")
+	window := fs.Duration("window", time.Minute, "rule window")
+	servers := fs.Int("servers", 16, "edge servers in the PoP")
+	seed := fs.Uint64("seed", 1, "random seed")
+	fs.Parse(args)
+
+	rule := slidewin.Rule{Limit: *limit, Window: *window}
+	src := slidewin.Mix(*clients, *limit, *seed)
+	feed := func(fn func(slidewin.Request)) {
+		slidewin.Stream(src, time.Unix(0, 0), time.Duration(*minutes)*time.Minute, *window, *servers, *seed, fn)
+	}
+	fmt.Printf("%d clients, %d servers, limit %d per %v\n\n", *clients, *servers, rule.Limit, rule.Window)
+	fmt.Printf("%-10s %-6s %10s %8s %8s %11s %13s\n", "lag", "cache", "requests", "blocked", "leaked", "collateral", "trips/request")
+	for _, lag := range []time.Duration{0, 100 * time.Millisecond, time.Second, 10 * time.Second} {
+		for _, noCache := range []bool{false, true} {
+			r := slidewin.Simulate(slidewin.SimConfig{Rule: rule, Servers: *servers, Lag: lag, NoCache: noCache}, feed)
+			cache := "on"
+			if noCache {
+				cache = "off"
+			}
+			fmt.Printf("%-10v %-6s %10d %7.2f%% %7.2f%% %10.3f%% %13.2f\n", lag, cache, r.Requests,
+				pct(r.Blocked, r.Requests), pct(r.Leaked, r.Requests), pct(r.Collateral, r.Requests),
+				float64(r.RoundTrips)/float64(r.Requests))
+		}
+	}
+}
+
+func pct(a, b int) float64 {
+	if b == 0 {
+		return 0
+	}
+	return 100 * float64(a) / float64(b)
 }
