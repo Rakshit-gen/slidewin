@@ -69,7 +69,7 @@ lag        cache    requests  blocked   leaked  collateral trips/request
 10s        on        2025956   52.62%    3.80%      2.246%          1.39
 ```
 
-- Counting a second behind the requests costs very little; at 10 s behind, leaks triple.
+- Counting a second behind the requests costs very little; at 10 s behind, leaks go up 3.5 times.
 - The in-memory copy of mitigations doesn't change a single decision and saves a quarter of all store round
   trips here. Under a real attack, where most requests come from mitigated clients, the share is larger.
 - Most collateral is the mitigation timeout doing its job: a client that bursts over stays blocked for a
