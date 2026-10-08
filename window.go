@@ -21,3 +21,13 @@ func Estimate(prev, cur int64, elapsed, window time.Duration) float64 {
 	weight := float64(window-elapsed) / float64(window)
 	return float64(prev)*weight + float64(cur)
 }
+
+// Bucket splits a moment into the index of the fixed window it falls in and how
+// far into that window it is. Windows are aligned to the Unix epoch, so every
+// server in a PoP agrees on where a window starts without talking to the others.
+func Bucket(now time.Time, window time.Duration) (index int64, elapsed time.Duration) {
+	ns := now.UnixNano()
+	w := int64(window)
+	index = ns / w
+	return index, time.Duration(ns - index*w)
+}

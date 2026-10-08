@@ -24,3 +24,15 @@ func TestEstimateEdges(t *testing.T) {
 		t.Fatalf("past the window: got %v, want 3", got)
 	}
 }
+
+func TestBucket(t *testing.T) {
+	now := time.Unix(125, 0) // 2 minutes and 5 seconds after the epoch
+	i, e := Bucket(now, time.Minute)
+	if i != 2 || e != 5*time.Second {
+		t.Fatalf("got %d, %v", i, e)
+	}
+	j, _ := Bucket(now.Add(55*time.Second), time.Minute)
+	if j != 3 {
+		t.Fatalf("next window: got %d", j)
+	}
+}
