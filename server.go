@@ -11,6 +11,9 @@ import (
 // counter store never slows down a request.
 type Server struct {
 	lim *Limiter
+	// NoCache turns off the in-memory copy of mitigations, so every request
+	// asks the store. Only useful to measure what the cache saves.
+	NoCache bool
 
 	mu      sync.Mutex
 	pending []string
@@ -36,9 +39,11 @@ func (s *Server) Allow(client string) bool {
 	s.mu.Unlock()
 
 	if end, blocked := s.lim.Mitigated(client); blocked {
-		s.mu.Lock()
-		s.blocked[client] = end
-		s.mu.Unlock()
+		if !s.NoCache {
+			s.mu.Lock()
+			s.blocked[client] = end
+			s.mu.Unlock()
+		}
 		return false
 	}
 	s.mu.Lock()
