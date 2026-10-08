@@ -36,3 +36,28 @@ func (l *Log) trim(client string, t time.Time) []time.Time {
 	l.times[client] = ts
 	return ts
 }
+
+// Fixed is the naive limiter: one counter per window, reset at each boundary.
+// A client can send the full limit at the end of one window and again at the
+// start of the next, twice the limit in a moment.
+type Fixed struct {
+	window time.Duration
+	counts map[string]int64
+	index  map[string]int64
+}
+
+// NewFixed returns a fixed window counter.
+func NewFixed(window time.Duration) *Fixed {
+	return &Fixed{window: window, counts: map[string]int64{}, index: map[string]int64{}}
+}
+
+// Add records a request and returns the count for the current window.
+func (f *Fixed) Add(client string, t time.Time) int64 {
+	i, _ := Bucket(t, f.window)
+	if f.index[client] != i {
+		f.index[client] = i
+		f.counts[client] = 0
+	}
+	f.counts[client]++
+	return f.counts[client]
+}
