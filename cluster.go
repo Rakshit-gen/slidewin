@@ -67,11 +67,13 @@ func shardKey(key string) string {
 func (c *Cluster) do(key string, op func(*Node) error) error {
 	c.trips.Add(1)
 	c.mu.Lock()
-	now := c.now()
-	for s, retry := range c.ejected {
-		if !now.Before(retry) {
-			delete(c.ejected, s)
-			c.ring.Add(s)
+	if len(c.ejected) > 0 { // reading the clock costs more than the rest of a lookup
+		now := c.now()
+		for s, retry := range c.ejected {
+			if !now.Before(retry) {
+				delete(c.ejected, s)
+				c.ring.Add(s)
+			}
 		}
 	}
 	server := c.ring.Lookup(shardKey(key))
@@ -91,7 +93,7 @@ func (c *Cluster) do(key string, op func(*Node) error) error {
 	c.failures[server]++
 	if _, out := c.ejected[server]; !out && c.failures[server] >= ServerFailureLimit {
 		c.failures[server] = 0
-		c.ejected[server] = now.Add(ServerRetryTimeout)
+		c.ejected[server] = c.now().Add(ServerRetryTimeout)
 		c.ring.Remove(server)
 	}
 	return err
