@@ -2,6 +2,8 @@ package slidewin
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -82,5 +84,32 @@ func TestCheckSaysWhenMitigationEnds(t *testing.T) {
 	c.advance(time.Minute) // now from the in-memory copy
 	if wait, blocked := s.Check("x"); !blocked || wait != 3*time.Minute {
 		t.Fatalf("cached: got %v %v", wait, blocked)
+	}
+}
+
+func TestServerIsSafeForConcurrentUse(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)} // never advanced, so only read
+	s := NewServer(NewLimiter(Rule{Limit: 50, Window: time.Minute}, NewCluster(c.now, "a", "b"), c.now))
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 500; i++ {
+				s.Allow(fmt.Sprintf("c%d", (g*500+i)%50))
+				if i%100 == 0 {
+					s.Flush()
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	s.Flush()
+	// Each client sent 80. Racing first increments can lose a few counts,
+	// never 30.
+	for i := 0; i < 50; i++ {
+		if s.Allow(fmt.Sprintf("c%d", i)) {
+			t.Fatalf("c%d not mitigated", i)
+		}
 	}
 }
