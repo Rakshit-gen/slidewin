@@ -38,8 +38,9 @@ func BenchmarkAllowMitigated(b *testing.B) {
 	}
 }
 
+// 1000 clients under the limit, counted in batches of 1000 requests.
 func BenchmarkFlush(b *testing.B) {
-	s := NewServer(NewLimiter(Rule{Limit: 50, Window: time.Minute}, NewCluster(nil, "a", "b", "c"), nil))
+	s := NewServer(NewLimiter(Rule{Limit: 1 << 40, Window: time.Minute}, NewCluster(nil, "a", "b", "c"), nil))
 	clients := make([]string, 1000)
 	for i := range clients {
 		clients[i] = fmt.Sprintf("10.0.%d.%d", i/256, i%256)
