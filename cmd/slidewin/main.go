@@ -89,6 +89,7 @@ func sim(args []string) {
 	limit := fs.Int64("limit", 50, "requests allowed per window")
 	window := fs.Duration("window", time.Minute, "rule window")
 	servers := fs.Int("servers", 16, "edge servers in the PoP")
+	kill := fs.Duration("kill", 0, "take one shard down this far into the run (0: never)")
 	seed := fs.Uint64("seed", 1, "random seed")
 	near := fs.Float64("near", 0.15, "share of clients sending 0.7 to 1.3 times the limit")
 	fs.Parse(args)
@@ -98,11 +99,19 @@ func sim(args []string) {
 	feed := func(fn func(slidewin.Request)) {
 		slidewin.Stream(src, time.Unix(0, 0), time.Duration(*minutes)*time.Minute, *window, *servers, *seed, fn)
 	}
-	fmt.Printf("%d clients, %d servers, limit %d per %v\n\n", *clients, *servers, rule.Limit, rule.Window)
+	var killAt time.Time
+	if *kill > 0 {
+		killAt = time.Unix(0, 0).Add(*kill)
+	}
+	fmt.Printf("%d clients, %d servers, limit %d per %v\n", *clients, *servers, rule.Limit, rule.Window)
+	if *kill > 0 {
+		fmt.Printf("one shard goes down %v in\n", *kill)
+	}
+	fmt.Println()
 	fmt.Printf("%-10s %-6s %10s %8s %8s %11s %13s\n", "lag", "cache", "requests", "blocked", "leaked", "collateral", "trips/request")
 	for _, lag := range []time.Duration{0, 100 * time.Millisecond, time.Second, 10 * time.Second} {
 		for _, noCache := range []bool{false, true} {
-			r := slidewin.Simulate(slidewin.SimConfig{Rule: rule, Servers: *servers, Lag: lag, NoCache: noCache}, feed)
+			r := slidewin.Simulate(slidewin.SimConfig{Rule: rule, Servers: *servers, Lag: lag, NoCache: noCache, KillAt: killAt}, feed)
 			cache := "on"
 			if noCache {
 				cache = "off"
