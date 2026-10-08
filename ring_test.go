@@ -54,3 +54,21 @@ func TestRingResizeMovesFewKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestRingSpreadsIPAddresses(t *testing.T) {
+	var names []string
+	for i := 1; i <= 16; i++ {
+		names = append(names, fmt.Sprintf("edge%02d", i))
+	}
+	r := NewRing(names...)
+	count := map[string]int{}
+	const n = 16000
+	for i := 0; i < n; i++ {
+		count[r.Lookup(fmt.Sprintf("198.51.%d.%d", i/256%256, i%256))]++
+	}
+	for _, s := range names {
+		if c := count[s]; c < n/16*6/10 || c > n/16*14/10 {
+			t.Errorf("%s got %d of %d keys", s, c, n)
+		}
+	}
+}
