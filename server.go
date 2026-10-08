@@ -1,6 +1,7 @@
 package slidewin
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -61,5 +62,21 @@ func (s *Server) Flush() {
 	}
 	for c := range seen {
 		s.lim.Judge(c)
+	}
+}
+
+// Run flushes the queue every interval until ctx is done, then once more so no
+// counted request is lost on shutdown.
+func (s *Server) Run(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			s.Flush()
+			return
+		case <-t.C:
+			s.Flush()
+		}
 	}
 }

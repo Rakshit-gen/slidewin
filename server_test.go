@@ -1,6 +1,7 @@
 package slidewin
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -45,4 +46,24 @@ func TestServerCachesMitigation(t *testing.T) {
 	if !s.Allow("x") {
 		t.Fatal("still blocked after the mitigation ended")
 	}
+}
+
+func TestServerRunFlushesInBackground(t *testing.T) {
+	l := NewLimiter(Rule{Limit: 2, Window: time.Hour}, NewCluster(nil, "a"), nil)
+	s := NewServer(l)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Run(ctx, time.Millisecond); close(done) }()
+	for i := 0; i < 3; i++ {
+		s.Allow("x")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for s.Allow("x") {
+		if time.Now().After(deadline) {
+			t.Fatal("background flush never mitigated the client")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
 }
