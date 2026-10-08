@@ -7,8 +7,10 @@ import (
 )
 
 // Rule is a limit such as 50 requests per minute. A client that goes over is
-// mitigated for Timeout, or for one Window if Timeout is zero.
+// mitigated for Timeout, or for one Window if Timeout is zero. Rules that
+// share a store need different names, so their counters stay apart.
 type Rule struct {
+	Name    string
 	Limit   int64
 	Window  time.Duration
 	Timeout time.Duration
@@ -36,8 +38,8 @@ func NewLimiter(rule Rule, store *Cluster, now func() time.Time) *Limiter {
 	return &Limiter{rule: rule, store: store, now: now}
 }
 
-func counterKey(client string, index int64) string {
-	return fmt.Sprintf("rl:{%s}:%d", client, index)
+func (l *Limiter) counterKey(client string, index int64) string {
+	return fmt.Sprintf("rl:%s:{%s}:%d", l.rule.Name, client, index)
 }
 
 // Count records one request from client in the current window. INCR fails on a
@@ -46,7 +48,7 @@ func counterKey(client string, index int64) string {
 // rather than use CAS, which fails constantly under attack.
 func (l *Limiter) Count(client string) {
 	i, _ := Bucket(l.now(), l.rule.Window)
-	key := counterKey(client, i)
+	key := l.counterKey(client, i)
 	if _, err := l.store.Incr(key, 1); errors.Is(err, ErrMiss) {
 		// The counter is read during the next window, then never again.
 		l.store.Set(key, 1, 2*l.rule.Window)
@@ -56,12 +58,14 @@ func (l *Limiter) Count(client string) {
 // Rate is the sliding window estimate of client's requests over the last window.
 func (l *Limiter) Rate(client string) float64 {
 	i, elapsed := Bucket(l.now(), l.rule.Window)
-	prev, cur := counterKey(client, i-1), counterKey(client, i)
+	prev, cur := l.counterKey(client, i-1), l.counterKey(client, i)
 	got := l.store.GetMulti(prev, cur)
 	return Estimate(got[prev], got[cur], elapsed, l.rule.Window)
 }
 
-func mitigationKey(client string) string { return "mit:{" + client + "}" }
+func (l *Limiter) mitigationKey(client string) string {
+	return "mit:" + l.rule.Name + ":{" + client + "}"
+}
 
 // Judge compares client's rate with the limit and, when it is over, stores a
 // mitigation flag that every server in the PoP will see. The flag holds the
@@ -71,13 +75,13 @@ func (l *Limiter) Judge(client string) bool {
 		return false
 	}
 	d := l.rule.timeout()
-	l.store.Set(mitigationKey(client), l.now().Add(d).UnixNano(), d)
+	l.store.Set(l.mitigationKey(client), l.now().Add(d).UnixNano(), d)
 	return true
 }
 
 // Mitigated reports whether client is under a mitigation, and until when.
 func (l *Limiter) Mitigated(client string) (time.Time, bool) {
-	end, err := l.store.Get(mitigationKey(client))
+	end, err := l.store.Get(l.mitigationKey(client))
 	if err != nil {
 		return time.Time{}, false
 	}
