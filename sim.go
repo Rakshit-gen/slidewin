@@ -10,6 +10,10 @@ type SimConfig struct {
 	// in between are served on the old mitigation state.
 	Lag     time.Duration
 	NoCache bool
+	// KillAt, if set, takes the first server's shard down at that moment. It
+	// stays down; the cluster ejects it and its clients restart from zero on
+	// the shards that take over.
+	KillAt time.Time
 }
 
 // SimReport is what the PoP did with the traffic.
@@ -38,8 +42,13 @@ func Simulate(cfg SimConfig, feed func(func(Request))) SimReport {
 	served := NewLog(cfg.Rule.Window) // requests the PoP let through
 	var r SimReport
 	var flushed time.Time
+	killed := false
 	feed(func(q Request) {
 		clk.t = q.At
+		if !cfg.KillAt.IsZero() && !killed && !q.At.Before(cfg.KillAt) {
+			pop.Store.Node("edge01").SetDown(true)
+			killed = true
+		}
 		if q.At.Sub(flushed) >= cfg.Lag {
 			pop.Flush()
 			flushed = q.At

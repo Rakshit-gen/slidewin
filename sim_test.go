@@ -36,3 +36,24 @@ func TestSimulateCacheSavesRoundTrips(t *testing.T) {
 		t.Fatalf("cache changed decisions: %d vs %d blocked", cached.Blocked, uncached.Blocked)
 	}
 }
+
+func TestSimulateSurvivesLosingAShard(t *testing.T) {
+	rule := Rule{Limit: 50, Window: time.Minute}
+	src := Mix(300, 50, 0.15, 2)
+	feed := func(fn func(Request)) {
+		Stream(src, time.Unix(0, 0), 10*time.Minute, time.Minute, 4, 2, fn)
+	}
+	base := Simulate(SimConfig{Rule: rule, Servers: 4}, feed)
+	hurt := Simulate(SimConfig{Rule: rule, Servers: 4, KillAt: time.Unix(300, 0)}, feed)
+	// Losing a quarter of the counters lets more through for a while, but
+	// the limiter keeps working and never blocks more because of it.
+	if hurt.Leaked <= base.Leaked {
+		t.Fatalf("leaked %d with a dead shard, %d without", hurt.Leaked, base.Leaked)
+	}
+	if hurt.Leaked > 3*base.Leaked {
+		t.Fatalf("leaked %d with a dead shard, %d without", hurt.Leaked, base.Leaked)
+	}
+	if hurt.Collateral > base.Collateral {
+		t.Fatalf("collateral rose: %d vs %d", hurt.Collateral, base.Collateral)
+	}
+}
