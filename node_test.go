@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-// clock is a manual clock for tests and simulations.
-type clock struct{ t time.Time }
-
-func (c *clock) now() time.Time          { return c.t }
-func (c *clock) advance(d time.Duration) { c.t = c.t.Add(d) }
-
 func TestNodeIncrNeedsSet(t *testing.T) {
 	n := NewNode(nil)
 	if _, err := n.Incr("a", 1); !errors.Is(err, ErrMiss) {
