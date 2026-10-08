@@ -33,3 +33,26 @@ func TestLimiterCountersExpire(t *testing.T) {
 		t.Fatal("counter outlived two windows")
 	}
 }
+
+func TestJudgeSetsFlagUntilTimeout(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)}
+	l := NewLimiter(Rule{Limit: 5, Window: time.Minute, Timeout: 10 * time.Minute}, NewCluster(c.now, "a"), c.now)
+	for i := 0; i < 5; i++ {
+		l.Count("x")
+	}
+	if l.Judge("x") {
+		t.Fatal("mitigated at the limit")
+	}
+	l.Count("x")
+	if !l.Judge("x") {
+		t.Fatal("not mitigated over the limit")
+	}
+	end, ok := l.Mitigated("x")
+	if !ok || !end.Equal(c.t.Add(10*time.Minute)) {
+		t.Fatalf("flag: %v %v", end, ok)
+	}
+	c.advance(10 * time.Minute)
+	if _, ok := l.Mitigated("x"); ok {
+		t.Fatal("flag outlived its timeout")
+	}
+}

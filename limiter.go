@@ -6,10 +6,19 @@ import (
 	"time"
 )
 
-// Rule is a limit such as 50 requests per minute.
+// Rule is a limit such as 50 requests per minute. A client that goes over is
+// mitigated for Timeout, or for one Window if Timeout is zero.
 type Rule struct {
-	Limit  int64
-	Window time.Duration
+	Limit   int64
+	Window  time.Duration
+	Timeout time.Duration
+}
+
+func (r Rule) timeout() time.Duration {
+	if r.Timeout > 0 {
+		return r.Timeout
+	}
+	return r.Window
 }
 
 // Limiter counts requests per client in a Cluster and judges them against Rule.
@@ -50,4 +59,27 @@ func (l *Limiter) Rate(client string) float64 {
 	prev, cur := counterKey(client, i-1), counterKey(client, i)
 	got := l.store.GetMulti(prev, cur)
 	return Estimate(got[prev], got[cur], elapsed, l.rule.Window)
+}
+
+func mitigationKey(client string) string { return "mit:{" + client + "}" }
+
+// Judge compares client's rate with the limit and, when it is over, stores a
+// mitigation flag that every server in the PoP will see. The flag holds the
+// time the mitigation ends and expires on its own at that time.
+func (l *Limiter) Judge(client string) bool {
+	if l.Rate(client) <= float64(l.rule.Limit) {
+		return false
+	}
+	d := l.rule.timeout()
+	l.store.Set(mitigationKey(client), l.now().Add(d).UnixNano(), d)
+	return true
+}
+
+// Mitigated reports whether client is under a mitigation, and until when.
+func (l *Limiter) Mitigated(client string) (time.Time, bool) {
+	end, err := l.store.Get(mitigationKey(client))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(0, end), true
 }
