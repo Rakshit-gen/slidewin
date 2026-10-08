@@ -3,8 +3,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -20,13 +23,15 @@ func main() {
 		eval(os.Args[2:])
 	case "sim":
 		sim(os.Args[2:])
+	case "serve":
+		serve(os.Args[2:])
 	default:
 		usage()
 	}
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: slidewin eval|sim [flags]")
+	fmt.Fprintln(os.Stderr, "usage: slidewin eval|sim|serve [flags]")
 	os.Exit(2)
 }
 
@@ -114,4 +119,22 @@ func pct(a, b int) float64 {
 		return 0
 	}
 	return 100 * float64(a) / float64(b)
+}
+
+func serve(args []string) {
+	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+	addr := fs.String("addr", "127.0.0.1:8080", "listen address")
+	limit := fs.Int64("limit", 10, "requests allowed per window")
+	window := fs.Duration("window", 10*time.Second, "rule window")
+	flush := fs.Duration("flush", 50*time.Millisecond, "how often queued requests are counted")
+	fs.Parse(args)
+
+	rule := slidewin.Rule{Limit: *limit, Window: *window}
+	srv := slidewin.NewServer(slidewin.NewLimiter(rule, slidewin.NewCluster(nil, "local"), nil))
+	go srv.Run(context.Background(), *flush)
+	hello := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "ok")
+	})
+	log.Printf("listening on %s, %d requests per %v per client", *addr, rule.Limit, rule.Window)
+	log.Fatal(http.ListenAndServe(*addr, slidewin.Middleware(srv, nil, hello)))
 }
