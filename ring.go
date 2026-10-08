@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"slices"
 	"sort"
 )
@@ -43,9 +44,12 @@ func (r *Ring) add(server string) {
 	slices.Sort(r.points)
 }
 
+// hashKey places a key on the ring with FNV-1a, Twemproxy's default key hash.
+// MD5 is only used to lay out the servers' points, which happens rarely.
 func hashKey(key string) uint32 {
-	d := md5.Sum([]byte(key))
-	return binary.LittleEndian.Uint32(d[:4])
+	h := fnv.New64a()
+	h.Write([]byte(key))
+	return uint32(h.Sum64())
 }
 
 // Lookup returns the server that owns key.
