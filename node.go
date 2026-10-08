@@ -75,3 +75,17 @@ func (n *Node) Incr(key string, delta int64) (int64, error) {
 	n.items[key] = it
 	return it.val, nil
 }
+
+// GetMulti fetches several keys in one round trip, the way a memcached GET
+// with more than one key does. Missing keys are left out of the result.
+func (n *Node) GetMulti(keys ...string) map[string]int64 {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	out := make(map[string]int64, len(keys))
+	for _, k := range keys {
+		if it, ok := n.live(k); ok {
+			out[k] = it.val
+		}
+	}
+	return out
+}
