@@ -37,13 +37,32 @@ func eval(args []string) {
 	limit := fs.Int64("limit", 50, "requests allowed per window")
 	window := fs.Duration("window", time.Minute, "rule window")
 	seed := fs.Uint64("seed", 1, "random seed")
+	byShape := fs.Bool("by-shape", false, "also report steady, bursty and ramping clients separately")
 	fs.Parse(args)
 
 	rule := slidewin.Rule{Limit: *limit, Window: *window}
 	src := slidewin.Mix(*clients, *limit, *seed)
+	length := time.Duration(*minutes) * time.Minute
+	if *byShape {
+		defer func() {
+			fmt.Printf("\n%-8s %9s %8s %6s %6s %8s\n", "shape", "requests", "wrong", "error", "missed", "accused")
+			for sh := slidewin.Steady; sh <= slidewin.Ramp; sh++ {
+				var part []slidewin.Source
+				for _, s := range src {
+					if s.Shape == sh {
+						part = append(part, s)
+					}
+				}
+				e := slidewin.NewEvaluator(rule)
+				slidewin.Stream(part, time.Unix(0, 0), length, *window, 1, *seed, e.Add)
+				r := e.Report()
+				fmt.Printf("%-8v %9d %7.3f%% %5.1f%% %6d %8d\n", sh, r.Requests, 100*r.Wrong(), 100*r.MeanError, r.Missed, r.Accused)
+			}
+		}()
+	}
 	start := time.Now()
 	e := slidewin.NewEvaluator(rule)
-	slidewin.Stream(src, time.Unix(0, 0), time.Duration(*minutes)*time.Minute, *window, 1, *seed, e.Add)
+	slidewin.Stream(src, time.Unix(0, 0), length, *window, 1, *seed, e.Add)
 	r := e.Report()
 	fmt.Printf("%d requests from %d sources, limit %d per %v (%.1fs)\n",
 		r.Requests, r.Sources, rule.Limit, rule.Window, time.Since(start).Seconds())
