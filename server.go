@@ -3,6 +3,7 @@ package slidewin
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,7 +19,7 @@ type Server struct {
 	// past the cap are served but not counted, so a flood can't grow memory
 	// faster than counting drains it.
 	MaxPending int
-	Dropped    int64 // requests left uncounted because the queue was full
+	Dropped    atomic.Int64 // requests left uncounted because the queue was full
 
 	mu      sync.Mutex
 	pending []string
@@ -73,7 +74,7 @@ func (s *Server) Check(client string) (wait time.Duration, blocked bool) {
 	if len(s.pending) < s.maxPending() {
 		s.pending = append(s.pending, client)
 	} else {
-		s.Dropped++
+		s.Dropped.Add(1)
 	}
 	s.mu.Unlock()
 	return 0, false

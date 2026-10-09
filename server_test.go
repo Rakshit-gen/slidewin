@@ -121,8 +121,8 @@ func TestServerQueueIsBounded(t *testing.T) {
 	for i := 0; i < 25; i++ {
 		s.Allow("x")
 	}
-	if s.Dropped != 15 {
-		t.Fatalf("dropped %d", s.Dropped)
+	if s.Dropped.Load() != 15 {
+		t.Fatalf("dropped %d", s.Dropped.Load())
 	}
 	s.Flush()
 	if got := s.lim.Rate("x"); got != 10 {
