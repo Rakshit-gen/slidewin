@@ -65,13 +65,15 @@ lag        cache    requests  blocked   leaked  collateral trips/request
 0s         on        2025956   54.96%    1.09%      1.027%          1.42
 0s         off       2025956   54.96%    1.09%      1.027%          1.93
 100ms      on        2025956   54.94%    1.10%      1.033%          1.42
-1s         on        2025956   54.69%    1.23%      1.068%          1.42
-10s        on        2025956   52.62%    3.80%      2.246%          1.39
+1s         on        2025956   54.69%    1.23%      1.068%          1.40
+10s        on        2025956   52.62%    3.80%      2.246%          1.27
 ```
 
 - Counting a second behind the requests costs very little; at 10 s behind, leaks go up 3.5 times.
 - The in-memory copy of mitigations doesn't change a single decision and saves a quarter of all store round
   trips here. Under a real attack, where most requests come from mitigated clients, the share is larger.
+- A flush sends one INCR per client, not per request, so the longer counting lags, the fewer round trips it
+  takes: 1.27 per request at 10 s against 1.42 at 0 s.
 - Most collateral is the mitigation timeout doing its job: a client that bursts over stays blocked for a
   window even after it slows down.
 - `-kill 15m` takes one of the 16 shards down halfway. Its clients start counting again from zero on the

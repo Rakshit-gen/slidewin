@@ -87,12 +87,14 @@ func (s *Server) Flush() {
 	batch := s.pending
 	s.pending = nil
 	s.mu.Unlock()
-	seen := map[string]bool{}
+	// One INCR per client rather than per request: a client sending a lot
+	// is exactly the one that would otherwise cost the most round trips.
+	counts := map[string]int64{}
 	for _, c := range batch {
-		s.lim.Count(c)
-		seen[c] = true
+		counts[c]++
 	}
-	for c := range seen {
+	for c, n := range counts {
+		s.lim.CountN(c, n)
 		s.lim.Judge(c)
 	}
 }

@@ -46,12 +46,15 @@ func (l *Limiter) counterKey(client string, index int64) string {
 // missing counter, so the first request of a window falls back to SET. Two
 // servers can both miss and both SET, losing one count; the blog accepts this
 // rather than use CAS, which fails constantly under attack.
-func (l *Limiter) Count(client string) {
+func (l *Limiter) Count(client string) { l.CountN(client, 1) }
+
+// CountN records n requests from client in one INCR.
+func (l *Limiter) CountN(client string, n int64) {
 	i, _ := Bucket(l.now(), l.rule.Window)
 	key := l.counterKey(client, i)
-	if _, err := l.store.Incr(key, 1); errors.Is(err, ErrMiss) {
+	if _, err := l.store.Incr(key, n); errors.Is(err, ErrMiss) {
 		// The counter is read during the next window, then never again.
-		l.store.Set(key, 1, 2*l.rule.Window)
+		l.store.Set(key, n, 2*l.rule.Window)
 	}
 }
 

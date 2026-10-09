@@ -129,3 +129,21 @@ func TestServerQueueIsBounded(t *testing.T) {
 		t.Fatalf("counted %v", got)
 	}
 }
+
+func TestFlushCountsEachClientOnce(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)}
+	store := NewCluster(c.now, "a")
+	s := NewServer(NewLimiter(Rule{Limit: 1000, Window: time.Minute}, store, c.now))
+	for i := 0; i < 500; i++ {
+		s.Allow("x")
+	}
+	before := store.RoundTrips()
+	s.Flush()
+	// The INCR misses and falls back to SET, then Judge reads both windows.
+	if n := store.RoundTrips() - before; n != 3 {
+		t.Fatalf("%d round trips to count 500 requests from one client", n)
+	}
+	if r := s.lim.Rate("x"); r != 500 {
+		t.Fatalf("rate %v, want 500", r)
+	}
+}
