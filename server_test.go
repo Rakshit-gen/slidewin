@@ -147,3 +147,25 @@ func TestFlushCountsEachClientOnce(t *testing.T) {
 		t.Fatalf("rate %v, want 500", r)
 	}
 }
+
+func TestFlushForgetsEndedMitigations(t *testing.T) {
+	c := &clock{t: time.Unix(600, 0)}
+	s := NewServer(NewLimiter(Rule{Limit: 1, Window: time.Minute}, NewCluster(c.now, "a"), c.now))
+	for i := 0; i < 100; i++ {
+		ip := fmt.Sprint("10.0.0.", i)
+		s.Allow(ip)
+		s.Allow(ip)
+	}
+	s.Flush()
+	for i := 0; i < 100; i++ {
+		s.Allow(fmt.Sprint("10.0.0.", i)) // caches the mitigation
+	}
+	if len(s.blocked) != 100 {
+		t.Fatalf("%d cached", len(s.blocked))
+	}
+	c.advance(time.Minute)
+	s.Flush()
+	if len(s.blocked) != 0 {
+		t.Fatalf("%d ended mitigations still cached", len(s.blocked))
+	}
+}

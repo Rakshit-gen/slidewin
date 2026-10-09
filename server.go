@@ -83,9 +83,17 @@ func (s *Server) Check(client string) (wait time.Duration, blocked bool) {
 // server runs this in the background; simulations call it at chosen moments
 // to model how far counting lags behind requests.
 func (s *Server) Flush() {
+	now := s.lim.now()
 	s.mu.Lock()
 	batch := s.pending
 	s.pending = nil
+	// A cached mitigation was only dropped when its client came back. An
+	// attack from many addresses that then stop would keep them all here.
+	for c, end := range s.blocked {
+		if !now.Before(end) {
+			delete(s.blocked, c)
+		}
+	}
 	s.mu.Unlock()
 	// One INCR per client rather than per request: a client sending a lot
 	// is exactly the one that would otherwise cost the most round trips.
