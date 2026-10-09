@@ -30,6 +30,16 @@ func main() {
 	}
 }
 
+// newRule checks the flags every subcommand shares. A window of 0 would
+// panic on the first request, dividing by it.
+func newRule(limit int64, window time.Duration) slidewin.Rule {
+	if window <= 0 || limit < 0 {
+		fmt.Fprintln(os.Stderr, "slidewin: -window must be above 0 and -limit at least 0")
+		os.Exit(2)
+	}
+	return slidewin.Rule{Limit: limit, Window: window}
+}
+
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: slidewin eval|sim|serve [flags]")
 	os.Exit(2)
@@ -46,7 +56,7 @@ func eval(args []string) {
 	byShape := fs.Bool("by-shape", false, "also report steady, bursty and ramping clients separately")
 	fs.Parse(args)
 
-	rule := slidewin.Rule{Limit: *limit, Window: *window}
+	rule := newRule(*limit, *window)
 	src := slidewin.Mix(*clients, *limit, *near, *seed)
 	length := time.Duration(*minutes) * time.Minute
 	if *byShape {
@@ -94,7 +104,7 @@ func sim(args []string) {
 	near := fs.Float64("near", 0.15, "share of clients sending 0.7 to 1.3 times the limit")
 	fs.Parse(args)
 
-	rule := slidewin.Rule{Limit: *limit, Window: *window}
+	rule := newRule(*limit, *window)
 	src := slidewin.Mix(*clients, *limit, *near, *seed)
 	feed := func(fn func(slidewin.Request)) {
 		slidewin.Stream(src, time.Unix(0, 0), time.Duration(*minutes)*time.Minute, *window, *servers, *seed, fn)
@@ -138,7 +148,7 @@ func serve(args []string) {
 	flush := fs.Duration("flush", 50*time.Millisecond, "how often queued requests are counted")
 	fs.Parse(args)
 
-	rule := slidewin.Rule{Limit: *limit, Window: *window}
+	rule := newRule(*limit, *window)
 	srv := slidewin.NewServer(slidewin.NewLimiter(rule, slidewin.NewCluster(nil, "local"), nil))
 	go srv.Run(context.Background(), *flush)
 	hello := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
